@@ -1,6 +1,7 @@
 package mrc20_service
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/mempool"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"manindexer/common"
@@ -18,6 +20,9 @@ import (
 type Mrc20Builder struct {
 	Net        *chaincfg.Params
 	MetaIdData *MetaIdData
+
+	CommitUtxos   []*CommitUtxo
+	ChangeAddress string
 
 	//deploy
 	deployPremineOutAddress string
@@ -36,10 +41,15 @@ type Mrc20Builder struct {
 	op                 string
 	mrc20ChangeAddress string
 
+	commitPsbtBuilder           *common.PsbtBuilder
+	revealPsbtBuilder           *common.PsbtBuilder
+	commitTx                    *wire.MsgTx
+	revealTx                    *wire.MsgTx
 	revealTaprootDataInputIndex uint32
 	TxCtxData                   *inscriptionTxCtxData
-	RevealPsbtBuilder           *common.PsbtBuilder
-	revealTx                    *wire.MsgTx
+
+	commitTxRaw string
+	revealTxRaw string
 }
 
 type MintPin struct {
@@ -87,6 +97,22 @@ type inscriptionTxCtxData struct {
 	revealTxPrevOutput      *wire.TxOut
 }
 
+type CommitUtxo struct {
+	PrivateKeyHex string
+	PkScript      string
+	Address       string
+	UtxoTxId      string
+	UtxoIndex     uint32
+	UtxoOutValue  int64
+}
+
+type Mrc20OutInfo struct {
+	Amount   string `json:"amount"`
+	Address  string `json:"address"`
+	PkScript string `json:"pkScript"`
+	OutValue int64  `json:"outValue"`
+}
+
 type CalInput struct {
 	OutTxId    string
 	OutIndex   uint32
@@ -107,7 +133,7 @@ func NewMrc20BuilderFromPsbtRaws(net *chaincfg.Params, revealPsbtRaw string) (*M
 
 	return &Mrc20Builder{
 		Net:               net,
-		RevealPsbtBuilder: revealPsbtBuilder,
+		revealPsbtBuilder: revealPsbtBuilder,
 		revealTx:          revealTx,
 	}, nil
 }
@@ -266,7 +292,7 @@ func (m *Mrc20Builder) buildEmptyRevealPsbt() error {
 	if err != nil {
 		return err
 	}
-	m.RevealPsbtBuilder = revealPsbtBuilder
+	m.revealPsbtBuilder = revealPsbtBuilder
 
 	taprootDataInSigner := &common.InputSign{
 		UtxoType: common.Taproot,
@@ -288,7 +314,7 @@ func (m *Mrc20Builder) buildEmptyRevealPsbt() error {
 		return err
 	}
 
-	m.RevealPsbtBuilder = revealPsbtBuilder
+	m.revealPsbtBuilder = revealPsbtBuilder
 	m.revealTaprootDataInputIndex = taprootDataInputIndex
 	m.TxCtxData.revealTxPrevOutput = &wire.TxOut{
 		PkScript: m.TxCtxData.CommitTxAddressPkScript,
@@ -299,7 +325,7 @@ func (m *Mrc20Builder) buildEmptyRevealPsbt() error {
 
 func (m *Mrc20Builder) CalRevealPsbtFee(feeRate int64) int64 {
 	var (
-		tx          *wire.MsgTx = m.RevealPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx
+		tx          *wire.MsgTx = m.revealPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx
 		txTotalSize int         = tx.SerializeSize()
 		txBaseSize  int         = tx.SerializeSizeStripped()
 		txFee       int64       = 0
@@ -370,6 +396,82 @@ func (m *Mrc20Builder) CalRevealPsbtFee(feeRate int64) int64 {
 	return txFee + revealOutValues
 }
 
+func (m *Mrc20Builder) buildCommitPsbt() error {
+	var (
+		commitPsbtBuilder *common.PsbtBuilder
+		inputs            []common.Input      = make([]common.Input, 0)
+		inSigners         []*common.InputSign = make([]*common.InputSign, 0)
+		outputs           []common.Output     = make([]common.Output, 0)
+		err               error
+
+		totalSenderAmount = btcutil.Amount(0)
+	)
+
+	for i, u := range m.CommitUtxos {
+		in := common.Input{
+			OutTxId:  u.UtxoTxId,
+			OutIndex: u.UtxoIndex,
+		}
+		inSigner := &common.InputSign{
+			UtxoType: common.Witness,
+			Index:    i,
+			//OutRaw:         "",
+			PkScript:     u.PkScript,
+			RedeemScript: "",
+			Amount:       uint64(u.UtxoOutValue),
+			SighashType:  txscript.SigHashAll,
+			PriHex:       u.PrivateKeyHex,
+			//MultiSigScript: "",
+			//PreSigScript:   "",
+		}
+
+		inputs = append(inputs, in)
+		inSigners = append(inSigners, inSigner)
+		totalSenderAmount += btcutil.Amount(u.UtxoOutValue)
+	}
+
+	commitOut := common.Output{
+		//Address: "",
+		Amount: uint64(m.TxCtxData.revealTxPrevOutput.Value),
+		Script: hex.EncodeToString(m.TxCtxData.revealTxPrevOutput.PkScript),
+	}
+	outputs = append(outputs, commitOut)
+
+	changeOut := common.Output{
+		Address: m.ChangeAddress,
+		Amount:  0,
+	}
+	outputs = append(outputs, changeOut)
+
+	commitPsbtBuilder, err = common.CreatePsbtBuilder(m.Net, inputs, outputs)
+	if err != nil {
+		return err
+	}
+	err = commitPsbtBuilder.UpdateAndAddInputWitness(inSigners)
+	if err != nil {
+		return err
+	}
+
+	totalRevealPrevOutput := m.CalRevealPsbtFee(m.FeeRate)
+	commitTx := commitPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx
+	fee := btcutil.Amount(mempool.GetTxVirtualSize(btcutil.NewTx(commitTx))) * btcutil.Amount(m.FeeRate)
+	changeAmount := totalSenderAmount - btcutil.Amount(totalRevealPrevOutput) - fee
+	if changeAmount > 300 {
+		commitTx.TxOut[len(commitTx.TxOut)-1].Value = int64(changeAmount)
+	} else {
+		commitTx.TxOut = commitTx.TxOut[:len(commitTx.TxOut)-1]
+		if changeAmount < 0 {
+			feeWithoutChange := btcutil.Amount(mempool.GetTxVirtualSize(btcutil.NewTx(commitTx))) * btcutil.Amount(m.FeeRate)
+			if totalSenderAmount-btcutil.Amount(totalRevealPrevOutput)-feeWithoutChange < 0 {
+				return errors.New("insufficient balance")
+			}
+		}
+	}
+	commitPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx = commitTx
+	m.commitPsbtBuilder = commitPsbtBuilder
+	return nil
+}
+
 func (m *Mrc20Builder) completeRevealPsbt(commitTxId string, commitTxOutIndex uint32) error {
 	var (
 		commitPreOutPoint *wire.OutPoint
@@ -381,14 +483,77 @@ func (m *Mrc20Builder) completeRevealPsbt(commitTxId string, commitTxOutIndex ui
 		return err
 	}
 	commitPreOutPoint = wire.NewOutPoint(txHash, commitTxOutIndex)
-	m.RevealPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx.TxIn[m.revealTaprootDataInputIndex].PreviousOutPoint = *commitPreOutPoint
+	m.revealPsbtBuilder.PsbtUpdater.Upsbt.UnsignedTx.TxIn[m.revealTaprootDataInputIndex].PreviousOutPoint = *commitPreOutPoint
 	return nil
 }
 
-func (m *Mrc20Builder) signRevealPsbt(mintPins []*MintPin, transferMrc20s []*TransferMrc20, taprootInSigner *common.InputSign) error {
+func (m *Mrc20Builder) signCommitPsbt() error {
+	var (
+		commitSigners []*common.InputSign = make([]*common.InputSign, 0)
+		err           error
+		commitTxHex   string = ""
+		commitTx      *wire.MsgTx
+	)
+	for i, u := range m.CommitUtxos {
+		pkScript, err := AddressToPkScript(m.Net, u.Address)
+		if err != nil {
+			return err
+		}
+		utxoType := common.Witness
+		addressClass, err := CheckAddressClass(m.Net, u.Address)
+		if err != nil {
+			return err
+		}
+		if addressClass == txscript.WitnessV1TaprootTy {
+			utxoType = common.Taproot
+		} else if addressClass == txscript.PubKeyHashTy {
+			utxoType = common.NonWitness
+			//if u.OutRaw == "" {
+			//	return errors.New("outRaw is empty")
+			//}
+		} else if addressClass == txscript.ScriptHashTy {
+			//if v.ReeemScript == "" {
+			//	return errors.New("redeemScript is empty")
+			//}
+		}
+		inSigner := &common.InputSign{
+			UtxoType: utxoType,
+			Index:    i,
+			//OutRaw:         "",
+			PkScript:     pkScript,
+			RedeemScript: "",
+			Amount:       uint64(u.UtxoOutValue),
+			SighashType:  txscript.SigHashAll,
+			PriHex:       u.PrivateKeyHex,
+			//MultiSigScript: "",
+			//PreSigScript:   "",
+		}
+		commitSigners = append(commitSigners, inSigner)
+
+	}
+
+	err = m.commitPsbtBuilder.UpdateAndSignInput(commitSigners)
+	if err != nil {
+		return err
+	}
+
+	commitTxHex, err = m.commitPsbtBuilder.ExtractPsbtTransaction()
+	if err != nil {
+		return err
+	}
+
+	txRaw, _ := hex.DecodeString(commitTxHex)
+	commitTx = wire.NewMsgTx(2)
+	err = commitTx.Deserialize(bytes.NewReader(txRaw))
+	m.commitTx = commitTx
+	return nil
+}
+
+func (m *Mrc20Builder) signRevealPsbt(mintPins []*MintPin, transferMrc20s []*TransferMrc20) error {
 	var (
 		revealSigners        []*common.InputSign = make([]*common.InputSign, 0)
 		revealTaprootSigners []*common.InputSign = make([]*common.InputSign, 0)
+		taprootInSigner      *common.InputSign
 		err                  error
 	)
 	if mintPins == nil {
@@ -434,33 +599,47 @@ func (m *Mrc20Builder) signRevealPsbt(mintPins []*MintPin, transferMrc20s []*Tra
 
 	}
 
-	err = m.RevealPsbtBuilder.UpdateAndSignInput(revealSigners)
+	err = m.revealPsbtBuilder.UpdateAndSignInput(revealSigners)
 	if err != nil {
 		return err
 	}
 
-	if taprootInSigner == nil {
-		taprootInSigner = &common.InputSign{
-			UtxoType: common.Taproot,
-			Index:    int(m.revealTaprootDataInputIndex),
-			//OutRaw:         "",
-			PkScript:            hex.EncodeToString(m.TxCtxData.CommitTxAddressPkScript),
-			RedeemScript:        hex.EncodeToString(m.TxCtxData.InscriptionScript),
-			ControlBlockWitness: hex.EncodeToString(m.TxCtxData.ControlBlockWitness),
-			Amount:              uint64(m.CalRevealPsbtFee(m.FeeRate)),
-			SighashType:         txscript.SigHashAll,
-			PriHex:              m.TxCtxData.RecoveryPrivateKeyHex,
-			//MultiSigScript: "",
-			//PreSigScript:   "",
-		}
-		revealTaprootSigners = append(revealTaprootSigners, taprootInSigner)
+	taprootInSigner = &common.InputSign{
+		UtxoType: common.Taproot,
+		Index:    int(m.revealTaprootDataInputIndex),
+		//OutRaw:         "",
+		PkScript:            hex.EncodeToString(m.TxCtxData.CommitTxAddressPkScript),
+		RedeemScript:        hex.EncodeToString(m.TxCtxData.InscriptionScript),
+		ControlBlockWitness: hex.EncodeToString(m.TxCtxData.ControlBlockWitness),
+		Amount:              uint64(m.CalRevealPsbtFee(m.FeeRate)),
+		SighashType:         txscript.SigHashAll,
+		PriHex:              m.TxCtxData.RecoveryPrivateKeyHex,
+		//MultiSigScript: "",
+		//PreSigScript:   "",
 	}
+	revealTaprootSigners = append(revealTaprootSigners, taprootInSigner)
 
-	err = m.RevealPsbtBuilder.UpdateAndSignTaprootInput(revealTaprootSigners)
+	err = m.revealPsbtBuilder.UpdateAndSignTaprootInput(revealTaprootSigners)
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func (m *Mrc20Builder) SignAll() error {
+	err := m.signCommitPsbt()
+	if err != nil {
+		return err
+	}
+	err = m.completeRevealPsbt(m.commitTx.TxHash().String(), 0)
+	if err != nil {
+		panic(err)
+	}
+	err = m.signRevealPsbt(m.MintPins, m.TransferMrc20s)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -471,11 +650,33 @@ func (m *Mrc20Builder) ExtractRevealTransaction() (string, string, error) {
 		err         error
 	)
 
-	revealTxHex, err = m.RevealPsbtBuilder.ExtractPsbtTransaction()
+	revealTxHex, err = m.revealPsbtBuilder.ExtractPsbtTransaction()
 	if err != nil {
 		return "", "", err
 	}
 	return commitTxHex, revealTxHex, nil
+}
+
+func (m *Mrc20Builder) ExtractAllPsbtTransaction() (string, string, error) {
+	var (
+		commitTxHex string
+		revealTxHex string
+		err         error
+	)
+
+	commitTxHex, err = m.commitPsbtBuilder.ExtractPsbtTransaction()
+	if err != nil {
+		return "", "", err
+	}
+	revealTxHex, err = m.revealPsbtBuilder.ExtractPsbtTransaction()
+	if err != nil {
+		return "", "", err
+	}
+	return commitTxHex, revealTxHex, nil
+}
+
+func (m *Mrc20Builder) Inscribe() (string, string, error) {
+	return "", "", nil
 }
 
 func createMetaIdTxCtxData(net *chaincfg.Params, metaIdData *MetaIdData) (*inscriptionTxCtxData, error) {

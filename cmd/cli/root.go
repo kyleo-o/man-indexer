@@ -27,6 +27,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.AddCommand(initWalletCmd)
 	rootCmd.AddCommand(getBalanceCmd)
+	rootCmd.AddCommand(mrc20OperationCmd)
 	rootCmd.PersistentFlags().StringVar(&CfgFile, "config", "config.json", "config file")
 }
 

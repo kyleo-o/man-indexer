@@ -1,6 +1,7 @@
-package bitcoin
+package microvisionchain
 
 import (
+	"fmt"
 	"manindexer/common"
 	"manindexer/pin"
 	"time"
@@ -17,18 +18,18 @@ var (
 	client *rpcclient.Client
 )
 
-type BitcoinChain struct {
+type MicroVisionChain struct {
 	IsTest bool
 }
 
 func init() {
-	btc := common.Config.Btc
+	mvc := common.Config.Mvc
 	rpcConfig := &rpcclient.ConnConfig{
-		Host:                 btc.RpcHost,
-		User:                 btc.RpcUser,
-		Pass:                 btc.RpcPass,
-		HTTPPostMode:         btc.RpcHTTPPostMode, // Bitcoin core only supports HTTP POST mode
-		DisableTLS:           btc.RpcDisableTLS,   // Bitcoin core does not provide TLS by default
+		Host:                 mvc.RpcHost,
+		User:                 mvc.RpcUser,
+		Pass:                 mvc.RpcPass,
+		HTTPPostMode:         mvc.RpcHTTPPostMode, //only supports HTTP POST mode
+		DisableTLS:           mvc.RpcDisableTLS,   //core does not provide TLS by default
 		DisableAutoReconnect: true,
 		DisableConnectOnNew:  true,
 	}
@@ -37,8 +38,9 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("mvc rpc  connect")
 }
-func (chain *BitcoinChain) GetBlock(blockHeight int64) (block interface{}, err error) {
+func (chain *MicroVisionChain) GetBlock(blockHeight int64) (block interface{}, err error) {
 	blockhash, err := client.GetBlockHash(blockHeight)
 	if err != nil {
 		return
@@ -46,7 +48,7 @@ func (chain *BitcoinChain) GetBlock(blockHeight int64) (block interface{}, err e
 	block, err = client.GetBlock(blockhash)
 	return
 }
-func (chain *BitcoinChain) GetBlockTime(blockHeight int64) (timestamp int64, err error) {
+func (chain *MicroVisionChain) GetBlockTime(blockHeight int64) (timestamp int64, err error) {
 	block, err := chain.GetBlock(blockHeight)
 	if err != nil {
 		return
@@ -55,7 +57,7 @@ func (chain *BitcoinChain) GetBlockTime(blockHeight int64) (timestamp int64, err
 	timestamp = b.Header.Timestamp.Unix()
 	return
 }
-func (chain *BitcoinChain) GetBlockByHash(hash string) (block *btcjson.GetBlockVerboseResult, err error) {
+func (chain *MicroVisionChain) GetBlockByHash(hash string) (block *btcjson.GetBlockVerboseResult, err error) {
 	blockhash, err := chainhash.NewHashFromStr(hash)
 	if err != nil {
 		return
@@ -64,7 +66,7 @@ func (chain *BitcoinChain) GetBlockByHash(hash string) (block *btcjson.GetBlockV
 
 	return
 }
-func (chain *BitcoinChain) GetTransaction(txId string) (tx interface{}, err error) {
+func (chain *MicroVisionChain) GetTransaction(txId string) (tx interface{}, err error) {
 	txHash, _ := chainhash.NewHashFromStr(txId)
 	return client.GetRawTransaction(txHash)
 }
@@ -77,18 +79,19 @@ func GetValueByTx(txId string, txIdx int) (value int64, err error) {
 	value = tx.MsgTx().TxOut[txIdx].Value
 	return
 }
-func (chain *BitcoinChain) GetInitialHeight() (height int64) {
-	return common.Config.Btc.InitialHeight
+func (chain *MicroVisionChain) GetInitialHeight() (height int64) {
+	return common.Config.Mvc.InitialHeight
 }
-func (chain *BitcoinChain) GetBestHeight() (height int64) {
+func (chain *MicroVisionChain) GetBestHeight() (height int64) {
 	info, err := client.GetBlockChainInfo()
 	if err != nil {
 		return
 	}
 	height = int64(info.Blocks)
+	//fmt.Println(height)
 	return
 }
-func (chain *BitcoinChain) GetBlockMsg(height int64) (blockMsg *pin.BlockMsg) {
+func (chain *MicroVisionChain) GetBlockMsg(height int64) (blockMsg *pin.BlockMsg) {
 	blockhash, err := client.GetBlockHash(height)
 	if err != nil {
 		return
@@ -107,24 +110,16 @@ func (chain *BitcoinChain) GetBlockMsg(height int64) (blockMsg *pin.BlockMsg) {
 	blockMsg.TransactionNum = len(block.Tx)
 	return
 }
-func (chain *BitcoinChain) GetCreatorAddress(txHashStr string, idx uint32, netParams *chaincfg.Params) (address string) {
+func (chain *MicroVisionChain) GetCreatorAddress(txHashStr string, idx uint32, netParams *chaincfg.Params) (address string) {
 	txHash, err := chainhash.NewHashFromStr(txHashStr)
 	if err != nil {
 		return "errorAddr"
 	}
-	//get commit tx
 	tx, err := client.GetRawTransaction(txHash)
 	if err != nil {
 		return "errorAddr"
 	}
-	//get commit tx first input
-	inputHash := tx.MsgTx().TxIn[0].PreviousOutPoint.Hash
-	inputIdx := tx.MsgTx().TxIn[0].PreviousOutPoint.Index
-	inputTx, err := client.GetRawTransaction(&inputHash)
-	if err != nil {
-		return "errorAddr"
-	}
-	_, addresses, _, _ := txscript.ExtractPkScriptAddrs(inputTx.MsgTx().TxOut[inputIdx].PkScript, netParams)
+	_, addresses, _, _ := txscript.ExtractPkScriptAddrs(tx.MsgTx().TxOut[idx].PkScript, netParams)
 	if len(addresses) > 0 {
 		address = addresses[0].String()
 	} else {

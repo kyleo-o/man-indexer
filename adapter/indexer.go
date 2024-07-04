@@ -1,6 +1,9 @@
 package adapter
 
-import "manindexer/pin"
+import (
+	"manindexer/mrc20"
+	"manindexer/pin"
+)
 
 type Indexer interface {
 	CatchPins(blockHeight int64) (pinInscriptions []*pin.PinInscription, txInList []string)
@@ -8,6 +11,6 @@ type Indexer interface {
 	GetAddress(pkScript []byte) (address string)
 	ZmqRun(chanMsg chan []*pin.PinInscription)
 	GetBlockTxHash(blockHeight int64) (txhashList []string)
-	PopLevelCount(pop string) (lv int, lastStr string)
 	ZmqHashblock()
+	CatchNativeMrc20Transfer(blockHeight int64, utxoList []*mrc20.Mrc20Utxo, mrc20TransferPinTx map[string]struct{}) (savelist []*mrc20.Mrc20Utxo)
 }

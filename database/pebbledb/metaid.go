@@ -26,7 +26,7 @@ func (pb *Pebble) GetMaxMetaIdNumber() (number int64) {
 	return
 }
 
-func (pb *Pebble) GetMetaIdInfo(address string, mempool bool) (info *pin.MetaIdInfo, unconfirmed string, err error) {
+func (pb *Pebble) GetMetaIdInfo(address string, mempool bool, metaid string) (info *pin.MetaIdInfo, unconfirmed string, err error) {
 
 	mempoolInfo, _ := findMetaIdInfoInMempool(address)
 	var unconfirmedList []string
@@ -101,7 +101,7 @@ func (pb *Pebble) BatchUpsertMetaIdInfo(infoList map[string]*pin.MetaIdInfo) (er
 		batchNumber.Close()
 	}()
 	for _, info := range infoList {
-		metaId, _, _ := pb.GetMetaIdInfo(info.Address, false)
+		metaId, _, _ := pb.GetMetaIdInfo(info.Address, false, "")
 		if metaId == nil {
 			metaId = info
 		}
@@ -164,7 +164,7 @@ func (pb *Pebble) BatchUpsertMetaIdInfo(infoList map[string]*pin.MetaIdInfo) (er
 	return
 }
 
-func (pb *Pebble) GetMetaIdPageList(page int64, size int64) (pins []*pin.MetaIdInfo, err error) {
+func (pb *Pebble) GetMetaIdPageList(page int64, size int64, order string) (pins []*pin.MetaIdInfo, err error) {
 	iter, err := Pb[MetaIdInfoCollection].NewIter(nil)
 	if err != nil {
 		return
@@ -188,5 +188,11 @@ func (pb *Pebble) GetMetaIdPageList(page int64, size int64) (pins []*pin.MetaIdI
 
 func findRootTxIdInMempool(address string) (rootTxId string, err error) {
 
+	return
+}
+func (pb *Pebble) BatchUpsertMetaIdInfoAddition(infoList []*pin.MetaIdInfoAdditional) (err error) {
+	return
+}
+func (pb *Pebble) GetDataValueByMetaIdList(list []string) (result []*pin.MetaIdDataValue, err error) {
 	return
 }

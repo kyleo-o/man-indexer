@@ -1,9 +1,9 @@
 package pin
 
 const (
-	//ProtocolID string = "746573746964" //testid(HEX16)
-	ProtocolID    string = "6d6574616964" //metaid
-	CompliantPath string = "info;file;protocols;nft;ft;mrc20"
+	ProtocolID string = "746573746964" //testid(HEX16)
+	//ProtocolID    string = "6d6574616964" //metaid
+	CompliantPath string = "info;file;protocols;nft;ft;mrc20;follow"
 )
 
 type PinInscription struct {
@@ -11,7 +11,9 @@ type PinInscription struct {
 	Number             int64  `json:"number"`
 	MetaId             string `json:"metaid"`
 	Address            string `json:"address"`
-	CreateAddress      string `json:"createAddress"`
+	CreateAddress      string `json:"creator"`
+	CreateMetaId       string `json:"createMetaId"`
+	InitialOwner       string `json:"initialOwner"`
 	Output             string `json:"output"`
 	OutputValue        int64  `json:"outputValue"`
 	Timestamp          int64  `json:"timestamp"`
@@ -40,6 +42,11 @@ type PinInscription struct {
 	Content            string `json:"content"`
 	Pop                string `json:"pop"`
 	PopLv              int    `json:"popLv"`
+	ChainName          string `json:"chainName"`
+	DataValue          int    `json:"dataValue"`
+	//Mrc20Minted        bool   `json:"mrc20Minted"`  //true Consumed
+	//Mrc20MintPin       string `json:"mrc20MintPin"` //mrc20 mint pin id
+	Mrc20MintId []string `json:"mrc20MintId"`
 }
 type PinTransferInfo struct {
 	Address     string `json:"address"`
@@ -62,12 +69,13 @@ type PersonalInformationNode struct {
 type FollowData struct {
 	MetaId        string `json:"metaId"`
 	FollowMetaId  string `json:"followMetaId"`
-	FoloowTime    int64  `json:"foloowTime"`
+	FollowTime    int64  `json:"followTime"`
 	FollowPinId   string `json:"followPinId"`
 	UnFollowPinId string `json:"unFollowPinId"`
 	Status        bool   `json:"status"`
 }
 type MetaIdInfo struct {
+	ChainName     string `json:"chainName"`
 	Number        int64  `json:"number"`
 	MetaId        string `json:"metaid"`
 	Name          string `json:"name"`
@@ -79,23 +87,42 @@ type MetaIdInfo struct {
 	BioId         string `json:"bioId"`
 	SoulbondToken string `json:"soulbondToken"`
 	IsInit        bool   `json:"isInit"`
+	FollowCount   int64  `json:"followCount"`
+	Pdv           int64  `json:"pdv"`
+	Fdv           int64  `json:"fdv"`
 }
-
+type MetaIdDataValue struct {
+	ChainName string `json:"chainName"`
+	MetaId    string `json:"metaid"`
+	Address   string `json:"address"`
+	Pdv       int64  `json:"pdv"`
+	Fdv       int64  `json:"fdv"`
+}
+type MetaIdInfoAdditional struct {
+	MetaId    string `json:"metaId"`
+	InfoKey   string `json:"infoKey"`
+	InfoValue string `json:"infoValue"`
+	PinId     string `json:"pinId"`
+}
 type PinTreeCatalog struct {
 	RootTxId string `json:"rootTxId"`
 	TreePath string `json:"treePath"`
 }
 
 type PinMsg struct {
-	Content   string `json:"content"`
-	Number    int64  `json:"number"`
-	Operation string `json:"operation"`
-	Height    int64  `json:"height"`
-	Id        string `json:"id"`
-	Type      string `json:"type"`
-	Path      string `json:"path"`
-	MetaId    string `json:"metaid"`
-	Pop       string `json:"pop"`
+	Content       string `json:"content"`
+	Number        int64  `json:"number"`
+	Operation     string `json:"operation"`
+	Height        int64  `json:"height"`
+	Id            string `json:"id"`
+	Type          string `json:"type"`
+	Path          string `json:"path"`
+	MetaId        string `json:"metaid"`
+	Pop           string `json:"pop"`
+	ChainName     string `json:"chainName"`
+	Address       string `json:"address"`
+	CreateAddress string `json:"creator"`
+	InitialOwner  string `json:"initialOwner"`
 }
 
 type BlockMsg struct {
@@ -112,4 +139,11 @@ type PinCount struct {
 	Pin    int64 `json:"Pin"`
 	MetaId int64 `json:"metaId"`
 	App    int64 `json:"app"`
+}
+type MemPoolTrasferPin struct {
+	PinId       string `json:"pinId"`
+	FromAddress string `json:"fromAddress"`
+	ToAddress   string `json:"toAddress"`
+	InTime      int64  `json:"inTime"`
+	TxHash      string `json:"txHash"`
 }

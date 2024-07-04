@@ -1,4 +1,4 @@
-package bitcoin
+package microvisionchain
 
 import (
 	"bytes"
@@ -32,12 +32,11 @@ func (indexer *Indexer) ZmqHashblock() {
 func (indexer *Indexer) ZmqRun(chanMsg chan []*pin.PinInscription) {
 	q, _ := zmq.NewSocket(zmq.SUB)
 	defer q.Close()
-	err := q.Connect(common.Config.Btc.ZmqHost)
+	err := q.Connect(common.Config.Mvc.ZmqHost)
 	if err != nil {
-		log.Println("ZmqRun:", err)
+		log.Println("Mvc ZmqRun:", err)
 	}
 	q.SetSubscribe("rawtx")
-
 	for {
 		msg, _ := q.RecvMessage(0)
 		var msgTx wire.MsgTx
@@ -53,8 +52,6 @@ func (indexer *Indexer) ZmqRun(chanMsg chan []*pin.PinInscription) {
 		if err == nil && len(tansferList) > 0 {
 			chanMsg <- tansferList
 		}
-		//check mrc20 transfer
-
 	}
 }
 func (indexer *Indexer) TransferCheck(tx *wire.MsgTx) (transferPinList []*pin.PinInscription, err error) {
@@ -81,7 +78,7 @@ func (indexer *Indexer) TransferCheck(tx *wire.MsgTx) (transferPinList []*pin.Pi
 			GenesisTransaction: tx.TxHash().String(),
 			IsTransfered:       true,
 		}
-		//fmt.Println(pinNode.Output)
+		fmt.Println(pinNode.Output)
 		info, err := indexer.GetOWnerAddress(pinNode.Output, tx)
 		//transferPin.Address, _, _ = indexer.GetPinOwner(tx, idx)
 		if err != nil {
@@ -91,20 +88,4 @@ func (indexer *Indexer) TransferCheck(tx *wire.MsgTx) (transferPinList []*pin.Pi
 		transferPinList = append(transferPinList, &transferPin)
 	}
 	return
-}
-func (indexer *Indexer) Mrc20NativeTransferCheck(tx *wire.MsgTx) {
-	var outputList []string
-	for _, in := range tx.TxIn {
-		output := fmt.Sprintf("%s:%d", in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)
-		outputList = append(outputList, output)
-	}
-
-	mrc20transferCheck, err := (*indexer.DbAdapter).GetMrc20UtxoByOutPutList(outputList)
-	if err == nil && len(mrc20transferCheck) > 0 {
-		mrc20TrasferList := indexer.CatchMempoolNativeMrc20Transfer(tx, mrc20transferCheck)
-		if len(mrc20TrasferList) > 0 {
-			//TODO update mempool db
-			//DbAdapter.UpdateMrc20Utxo(mrc20TrasferList)
-		}
-	}
 }

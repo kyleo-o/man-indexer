@@ -13,11 +13,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func (mg *Mongodb) GetMaxHeight() (height int64, err error) {
+func (mg *Mongodb) GetMaxHeight(chainName string) (height int64, err error) {
+	filter := bson.M{"chainname": chainName}
 	findOp := options.FindOne()
-	findOp.SetSort(bson.D{{Key: "number", Value: -1}})
+	findOp.SetSort(bson.D{{Key: "genesisheight", Value: -1}})
 	var pinInscription pin.PinInscription
-	err = mongoClient.Collection(PinsCollection).FindOne(context.TODO(), bson.D{}, findOp).Decode(&pinInscription)
+	err = mongoClient.Collection(PinsCollection).FindOne(context.TODO(), filter, findOp).Decode(&pinInscription)
 	if err != nil && err == mongo.ErrNoDocuments {
 		err = nil
 		return
@@ -45,8 +46,15 @@ func (mg *Mongodb) BatchAddPins(pins []interface{}) (err error) {
 	ordered := false
 	option := options.InsertManyOptions{Ordered: &ordered}
 	_, err = mongoClient.Collection(PinsCollection).InsertMany(context.TODO(), pins, &option)
+	if err != nil {
+		return
+	}
+	//add PDV & FDV
+	addPDV(pins)
+	addFDV(pins)
 	return
 }
+
 func (mg *Mongodb) UpdateTransferPin(trasferMap map[string]*pin.PinTransferInfo) (err error) {
 	var models []mongo.WriteModel
 	for id, info := range trasferMap {
@@ -95,7 +103,7 @@ func (mg *Mongodb) AddMempoolPin(pin *pin.PinInscription) (err error) {
 }
 func (mg *Mongodb) GetPinPageList(page int64, size int64) (pins []*pin.PinInscription, err error) {
 	cursor := (page - 1) * size
-	opts := options.Find().SetSort(bson.D{{Key: "number", Value: -1}}).SetSkip(cursor).SetLimit(size)
+	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetSkip(cursor).SetLimit(size)
 	result, err := mongoClient.Collection(PinsCollection).Find(context.TODO(), bson.M{}, opts)
 	if err != nil {
 		return
@@ -138,13 +146,40 @@ func (mg *Mongodb) DeleteMempoolInscription(txIds []string) (err error) {
 	if err != nil {
 		log.Println("DeleteMempoolInscription err", err)
 	}
+	var ts []string
+	for _, id := range txIds {
+		index := strings.LastIndex(id, "i")
+		if index <= 0 {
+			continue
+		}
+		ts = append(ts, id[:index])
+	}
+	filter2 := bson.M{"txhash": bson.M{"$in": ts}}
+	_, err = mongoClient.Collection(MempoolTransferPinsCollection).DeleteMany(context.TODO(), filter2)
+	if err != nil {
+		log.Println("DeleteMempoolTransfer err", err)
+	}
 	return
 }
-func (mg *Mongodb) GetPinListByAddress(address string, addressType string, cursor int64, size int64, cnt string) (pins []*pin.PinInscription, total int64, err error) {
+func (mg *Mongodb) GetPinListByAddress(address string, addressType string, cursor int64, size int64, cnt string, path string) (pins []*pin.PinInscription, total int64, err error) {
 	opts := options.Find().SetSort(bson.D{{Key: "number", Value: -1}}).SetSkip(cursor).SetLimit(size)
-	filter := bson.M{"address": address, "status": 0}
+	addStr := "address"
 	if addressType == "creator" {
-		filter = bson.M{"createaddress": address, "status": 0}
+		addStr = "createaddress"
+	}
+	// filter := bson.M{addStr: address, "status": 0}
+	// if path != "" {
+	// 	filter = bson.M{addStr: address, "status": 0, "originalpath": path}
+	// }
+	filter := bson.D{
+		{Key: addStr, Value: address},
+		{Key: "status", Value: 0},
+		{Key: "operation", Value: bson.D{
+			{Key: "$ne", Value: "hide"},
+		}},
+	}
+	if path != "" {
+		filter = append(filter, bson.E{Key: "originalpath", Value: path})
 	}
 	result, err := mongoClient.Collection(PinsCollection).Find(context.TODO(), filter, opts)
 	if err != nil {
@@ -196,7 +231,7 @@ func (mg *Mongodb) GetPinByNumberOrId(numberOrId string) (pinInscription *pin.Pi
 	return
 }
 func (mg *Mongodb) GetPinByMeatIdOrId(key string) (pinInscription *pin.PinInscription, err error) {
-	err = mongoClient.Collection(PinsCollection).FindOne(context.TODO(), bson.M{"$or": bson.A{bson.M{"id": key}, bson.M{"metaid": key}}}).Decode(&pinInscription)
+	err = mongoClient.Collection(PinsCollection).FindOne(context.TODO(), bson.M{"$or": bson.A{bson.M{"id": key}, bson.M{"metaid": key}, bson.M{"genesistransaction": key}}}).Decode(&pinInscription)
 	return
 }
 func (mg *Mongodb) GetPinByOutput(output string) (pinInscription *pin.PinInscription, err error) {
@@ -273,8 +308,12 @@ func (mg *Mongodb) GetParentNodeById(pinId string) (pinnode *pin.PinInscription,
 	}
 	return
 }
-func (mg *Mongodb) GetAllPinByPath(page, limit int64, path string) (pins []*pin.PinInscription, total int64, err error) {
-	filter := bson.M{"path": path}
+func (mg *Mongodb) GetAllPinByPath(page, limit int64, path string, metaidList []string) (pins []*pin.PinInscription, total int64, err error) {
+	pathList := strings.Split(path, ",")
+	filter := bson.M{"path": bson.M{"$in": pathList}}
+	if len(metaidList) > 0 {
+		filter = bson.M{"path": bson.M{"$in": pathList}, "metaid": bson.M{"$in": metaidList}}
+	}
 	cursor := (page - 1) * limit
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}, {Key: "number", Value: -1}}).SetSkip(cursor).SetLimit(limit)
 	mempoolResult, err := mongoClient.Collection(MempoolPinsCollection).Find(context.TODO(), filter, opts)
@@ -361,5 +400,22 @@ func getDataByContent(pinList []*pin.PinInscription) (data []map[string]interfac
 			//fmt.Println(err)
 		}
 	}
+	return
+}
+func (mg *Mongodb) AddMempoolTransfer(transferData *pin.MemPoolTrasferPin) (err error) {
+	_, err = mongoClient.Collection(MempoolTransferPinsCollection).InsertOne(context.TODO(), transferData)
+	return
+}
+func (mg *Mongodb) GetMempoolTransfer(address string, act string) (list []*pin.MemPoolTrasferPin, err error) {
+	filter := bson.M{"$or": bson.A{bson.M{"toaddress": address}, bson.M{"fromaddress": address}}}
+	result, err := mongoClient.Collection(MempoolTransferPinsCollection).Find(context.TODO(), filter)
+	if err != nil {
+		return
+	}
+	err = result.All(context.TODO(), &list)
+	return
+}
+func (mg *Mongodb) GetMempoolTransferById(pinId string) (result *pin.MemPoolTrasferPin, err error) {
+	err = mongoClient.Collection(MempoolTransferPinsCollection).FindOne(context.TODO(), bson.M{"pinid": pinId}).Decode(&result)
 	return
 }

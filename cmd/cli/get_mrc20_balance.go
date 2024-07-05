@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+	"github.com/spf13/cobra"
+	"manindexer/man"
+)
 
 var getMrc20BalanceCmd = &cobra.Command{
 	Use:   "balance",
@@ -15,5 +19,17 @@ func getMrc20Balance() {
 	if err := checkWallet(); err != nil {
 		return
 	}
-
+	if err := checkManDbAdapter(); err != nil {
+		return
+	}
+	address := wallet.GetAddress()
+	list, total, err := man.DbAdapter.GetMrc20BalanceByAddress(address, 0, 100)
+	if err != nil {
+		fmt.Printf("Failed to get mrc20 balance: %s\n", err)
+		return
+	}
+	fmt.Printf("Total: %d\n", total)
+	for _, v := range list {
+		fmt.Printf("TickId: %s, Balance: %s\n", v.Id, v.Balance)
+	}
 }

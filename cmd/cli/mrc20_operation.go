@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/spf13/cobra"
 	"manindexer/inscribe/mrc20_service"
 	"strconv"
@@ -16,6 +15,10 @@ var mrc20OperationCmd = &cobra.Command{
 		if err := checkWallet(); err != nil {
 			return
 		}
+		if err := checkManDbAdapter(); err != nil {
+			return
+		}
+
 		if len(args) < 1 {
 			fmt.Println("mrc20op command required")
 			return
@@ -56,16 +59,16 @@ var mrc20OperationCmd = &cobra.Command{
 
 func mrc20opDeploy(tick, tokenName, decimals, amtPerMint, mintCount, premineCount, blockHeight, qualCreator, qualPath, qualCount, qualLvl string, feeRate int64) {
 	var (
-		net                    *chaincfg.Params = &chaincfg.TestNet3Params
-		commitTxId, revealTxId string           = "", ""
-		fee                    int64            = 0
+		commitTxId, revealTxId string = "", ""
+		fee                    int64  = 0
 		err                    error
 		opRep                  *mrc20_service.Mrc20OpRequest
 		payload                string = ""
+		fetchCommitUtxoFunc    mrc20_service.FetchCommitUtxoFunc
 	)
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:                     net,
-		MetaIdFlag:              "",
+		Net:                     wallet.GetNet(),
+		MetaIdFlag:              wallet.GetProtocolId(),
 		Op:                      "deploy",
 		OpPayload:               payload,
 		DeployPinOutAddress:     "",
@@ -74,7 +77,11 @@ func mrc20opDeploy(tick, tokenName, decimals, amtPerMint, mintCount, premineCoun
 		ChangeAddress:           "",
 	}
 
-	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Deploy(opRep, feeRate)
+	fetchCommitUtxoFunc = func(needAmount int64) ([]*mrc20_service.CommitUtxo, error) {
+		return GetBtcUtxoList(wallet.GetAddress(), needAmount)
+	}
+
+	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Deploy(opRep, feeRate, fetchCommitUtxoFunc)
 	if err != nil {
 		fmt.Printf("Mrc20 deploy err:%s\n", err.Error())
 		return
@@ -87,15 +94,15 @@ func mrc20opDeploy(tick, tokenName, decimals, amtPerMint, mintCount, premineCoun
 
 func mrc20opMint(tickId string, feeRate int64) {
 	var (
-		net                    *chaincfg.Params = &chaincfg.TestNet3Params
-		commitTxId, revealTxId string           = "", ""
-		fee                    int64            = 0
+		commitTxId, revealTxId string = "", ""
+		fee                    int64  = 0
 		err                    error
 		opRep                  *mrc20_service.Mrc20OpRequest
 		payload                string                      = fmt.Sprintf(`{"id":"%s"}`, tickId)
 		mintPins               []*mrc20_service.MintPin    = make([]*mrc20_service.MintPin, 0)
 		commitUtxos            []*mrc20_service.CommitUtxo = make([]*mrc20_service.CommitUtxo, 0)
 		changeAddress          string                      = wallet.GetAddress()
+		fetchCommitUtxoFunc    mrc20_service.FetchCommitUtxoFunc
 	)
 
 	for _, v := range wallet.GetUtxos() {
@@ -109,9 +116,15 @@ func mrc20opMint(tickId string, feeRate int64) {
 		})
 	}
 
+	mintPins, err = getShovelList(wallet.GetAddress(), tickId)
+	if err != nil {
+		fmt.Printf("Mrc20 mint err:%s\n", err.Error())
+		return
+	}
+
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:           net,
-		MetaIdFlag:    "",
+		Net:           wallet.GetNet(),
+		MetaIdFlag:    wallet.GetProtocolId(),
 		Op:            "mint",
 		OpPayload:     payload,
 		CommitUtxos:   commitUtxos,
@@ -123,7 +136,11 @@ func mrc20opMint(tickId string, feeRate int64) {
 		ChangeAddress: changeAddress,
 	}
 
-	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Mint(opRep, feeRate)
+	fetchCommitUtxoFunc = func(needAmount int64) ([]*mrc20_service.CommitUtxo, error) {
+		return GetBtcUtxoList(wallet.GetAddress(), needAmount)
+	}
+
+	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Mint(opRep, feeRate, fetchCommitUtxoFunc)
 	if err != nil {
 		fmt.Printf("Mrc20 mint err:%s\n", err.Error())
 		return
@@ -136,12 +153,13 @@ func mrc20opMint(tickId string, feeRate int64) {
 
 func mrc20opTransfer(tickId, to, amount string, feeRate int64) {
 	var (
-		net                    *chaincfg.Params = &chaincfg.TestNet3Params
-		commitTxId, revealTxId string           = "", ""
-		fee                    int64            = 0
+		commitTxId, revealTxId string = "", ""
+		fee                    int64  = 0
 		err                    error
-		toPkScript, _          = mrc20_service.AddressToPkScript(net, amount)
+		toPkScript, _                 = mrc20_service.AddressToPkScript(wallet.GetNet(), to)
+		changeAddress          string = wallet.GetAddress()
 		opRep                  *mrc20_service.Mrc20OpRequest
+		commitUtxos            []*mrc20_service.CommitUtxo    = make([]*mrc20_service.CommitUtxo, 0)
 		transferMrc20s         []*mrc20_service.TransferMrc20 = make([]*mrc20_service.TransferMrc20, 0)
 		mrc20Outs              []*mrc20_service.Mrc20OutInfo  = []*mrc20_service.Mrc20OutInfo{
 			{
@@ -151,24 +169,49 @@ func mrc20opTransfer(tickId, to, amount string, feeRate int64) {
 				OutValue: 546,
 			},
 		}
-		payload string = ""
+		payload             string = ""
+		fetchCommitUtxoFunc mrc20_service.FetchCommitUtxoFunc
 	)
+	commitUtxos, err = GetBtcUtxoList(wallet.GetAddress(), 0)
+
+	transferMrc20s, err = getMrc20Utxos(wallet.GetAddress(), tickId, amount)
+	if err != nil {
+		fmt.Printf("Mrc20 transfer err:%s\n", err.Error())
+		return
+	}
+
+	for _, v := range wallet.GetUtxos() {
+		commitUtxos = append(commitUtxos, &mrc20_service.CommitUtxo{
+			PrivateKeyHex: wallet.GetPrivateKey(),
+			PkScript:      v.ScriptPubKey,
+			Address:       v.Address,
+			UtxoTxId:      v.TxId,
+			UtxoIndex:     v.Vout,
+			UtxoOutValue:  v.Shatoshi,
+		})
+	}
+
 	payload, err = mrc20_service.MakeTransferPayload(tickId, transferMrc20s, mrc20Outs)
 	if err != nil {
 		fmt.Printf("Mrc20 transfer err:%s\n", err.Error())
 		return
 	}
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:            net,
-		MetaIdFlag:     "",
+		Net:            wallet.GetNet(),
+		MetaIdFlag:     wallet.GetProtocolId(),
 		Op:             "transfer",
 		OpPayload:      payload,
+		CommitUtxos:    commitUtxos,
 		TransferMrc20s: transferMrc20s,
 		Mrc20Outs:      mrc20Outs,
-		ChangeAddress:  "",
+		ChangeAddress:  changeAddress,
 	}
 
-	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Transfer(opRep, feeRate)
+	fetchCommitUtxoFunc = func(needAmount int64) ([]*mrc20_service.CommitUtxo, error) {
+		return GetBtcUtxoList(wallet.GetAddress(), needAmount)
+	}
+
+	commitTxId, revealTxId, fee, err = mrc20_service.Mrc20Transfer(opRep, feeRate, fetchCommitUtxoFunc)
 	if err != nil {
 		fmt.Printf("Mrc20 transfer err:%s\n", err.Error())
 		return

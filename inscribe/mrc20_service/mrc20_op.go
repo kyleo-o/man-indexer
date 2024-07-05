@@ -26,7 +26,9 @@ type Mrc20OpRequest struct {
 	ChangeAddress  string
 }
 
-func Mrc20Deploy(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, error) {
+type FetchCommitUtxoFunc func(needAmount int64) ([]*CommitUtxo, error)
+
+func Mrc20Deploy(opRep *Mrc20OpRequest, feeRate int64, fetchUtxos FetchCommitUtxoFunc) (string, string, int64, error) {
 	var (
 		err          error
 		mrc20Builder *Mrc20Builder
@@ -71,7 +73,12 @@ func Mrc20Deploy(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, e
 	}
 	fee = mrc20Builder.CalRevealPsbtFee(feeRate)
 
-	err = mrc20Builder.buildCommitPsbt()
+	commitUtxos, err := fetchUtxos(fee)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	err = mrc20Builder.buildCommitPsbt(commitUtxos)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -93,7 +100,7 @@ func Mrc20Deploy(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, e
 	return commitTx, revealTx, fee, nil
 }
 
-func Mrc20Mint(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, error) {
+func Mrc20Mint(opRep *Mrc20OpRequest, feeRate int64, fetchUtxos FetchCommitUtxoFunc) (string, string, int64, error) {
 	var (
 		err          error
 		mrc20Builder *Mrc20Builder
@@ -137,7 +144,12 @@ func Mrc20Mint(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, err
 	}
 	fee = mrc20Builder.CalRevealPsbtFee(feeRate)
 
-	err = mrc20Builder.buildCommitPsbt()
+	commitUtxos, err := fetchUtxos(fee)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	err = mrc20Builder.buildCommitPsbt(commitUtxos)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -159,7 +171,7 @@ func Mrc20Mint(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, err
 	return commitTx, revealTx, fee, nil
 }
 
-func Mrc20Transfer(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64, error) {
+func Mrc20Transfer(opRep *Mrc20OpRequest, feeRate int64, fetchUtxos FetchCommitUtxoFunc) (string, string, int64, error) {
 	var (
 		err          error
 		mrc20Builder *Mrc20Builder
@@ -205,7 +217,12 @@ func Mrc20Transfer(opRep *Mrc20OpRequest, feeRate int64) (string, string, int64,
 	}
 	fee = mrc20Builder.CalRevealPsbtFee(feeRate)
 
-	err = mrc20Builder.buildCommitPsbt()
+	commitUtxos, err := fetchUtxos(fee)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	err = mrc20Builder.buildCommitPsbt(commitUtxos)
 	if err != nil {
 		return "", "", 0, err
 	}

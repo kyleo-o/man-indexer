@@ -396,7 +396,7 @@ func (m *Mrc20Builder) CalRevealPsbtFee(feeRate int64) int64 {
 	return txFee + revealOutValues
 }
 
-func (m *Mrc20Builder) buildCommitPsbt() error {
+func (m *Mrc20Builder) buildCommitPsbt(commitUtxos []*CommitUtxo) error {
 	var (
 		commitPsbtBuilder *common.PsbtBuilder
 		inputs            []common.Input      = make([]common.Input, 0)
@@ -407,7 +407,10 @@ func (m *Mrc20Builder) buildCommitPsbt() error {
 		totalSenderAmount = btcutil.Amount(0)
 	)
 
-	for i, u := range m.CommitUtxos {
+	if commitUtxos == nil {
+		commitUtxos = m.CommitUtxos
+	}
+	for i, u := range commitUtxos {
 		in := common.Input{
 			OutTxId:  u.UtxoTxId,
 			OutIndex: u.UtxoIndex,

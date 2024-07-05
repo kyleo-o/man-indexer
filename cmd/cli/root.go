@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"manindexer/common"
+	"manindexer/man"
 	"os"
 )
 
@@ -17,6 +19,7 @@ var rootCmd = &cobra.Command{
 }
 
 func initConfig() {
+	man.InitAdapter(common.Chain, common.Db, common.TestNet, common.Server)
 	//if err := viper.ReadInConfig(); err != nil {
 	//	fmt.Println(err)
 	//	os.Exit(1)
@@ -27,6 +30,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.AddCommand(initWalletCmd)
 	rootCmd.AddCommand(getBalanceCmd)
+	rootCmd.AddCommand(getMrc20BalanceCmd)
 	rootCmd.AddCommand(mrc20OperationCmd)
 	rootCmd.PersistentFlags().StringVar(&CfgFile, "config", "config.json", "config file")
 }

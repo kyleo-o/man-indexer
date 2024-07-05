@@ -1,17 +1,13 @@
 package cli
 
-import "github.com/btcsuite/btcd/chaincfg"
-
 var (
 	wallet *CliWallet
 )
 
 type CliWallet struct {
-	account    string
-	privateKey string
-	address    string
-	net        *chaincfg.Params
-	protocolId string
+	account    string `json:"account"`
+	privateKey string `json:"private_key"`
+	address    string `json:"address"`
 }
 
 type WalletUtxo struct {
@@ -36,14 +32,6 @@ func (c *CliWallet) GetAddress() string {
 
 func (c *CliWallet) GetUtxos() []*WalletUtxo {
 	return nil
-}
-
-func (c *CliWallet) GetNet() *chaincfg.Params {
-	return c.net
-}
-
-func (c *CliWallet) GetProtocolId() string {
-	return c.protocolId
 }
 
 func (c *CliWallet) GetMrc20Utxos() {

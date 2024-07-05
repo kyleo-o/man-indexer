@@ -5,12 +5,23 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/shopspring/decimal"
+	"manindexer/common"
 	"manindexer/inscribe/mrc20_service"
 	"manindexer/man"
 	"manindexer/mrc20"
 	"strconv"
 	"strings"
 )
+
+func getNetParams() *chaincfg.Params {
+	if common.TestNet == "1" {
+		return &chaincfg.TestNet3Params
+	} else if common.TestNet == "2" {
+		return &chaincfg.RegressionNetParams
+	} else {
+		return &chaincfg.MainNetParams
+	}
+}
 
 func GetBtcUtxoList(address string, needAmount int64) ([]*mrc20_service.CommitUtxo, error) {
 	utxos, err := GetBtcUtxo()
@@ -38,7 +49,7 @@ func GetBtcUtxoList(address string, needAmount int64) ([]*mrc20_service.CommitUt
 		if total > 0 {
 			continue
 		}
-		pkScript, err := mrc20_service.AddressToPkScript(wallet.GetNet(), address)
+		pkScript, err := mrc20_service.AddressToPkScript(getNetParams(), address)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +85,7 @@ func getMrc20Utxos(address, tickId, needAmount string) ([]*mrc20_service.Transfe
 	if err != nil {
 		return nil, err
 	}
-	pkScript, err := mrc20_service.AddressToPkScript(wallet.GetNet(), address)
+	pkScript, err := mrc20_service.AddressToPkScript(getNetParams(), address)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +124,7 @@ func getMrc20Utxos(address, tickId, needAmount string) ([]*mrc20_service.Transfe
 }
 
 func getShovelList(address, tickId string) ([]*mrc20_service.MintPin, error) {
-	info, err := man.DbAdapter.GetMrc20TickInfo(tickId)
+	info, err := man.DbAdapter.GetMrc20TickInfo(tickId, "")
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +159,7 @@ func getShovelList(address, tickId string) ([]*mrc20_service.MintPin, error) {
 	if count > total {
 		return nil, errors.New("insufficient shovel list")
 	}
-	pkScript, err := mrc20_service.AddressToPkScript(wallet.GetNet(), address)
+	pkScript, err := mrc20_service.AddressToPkScript(getNetParams(), address)
 	if err != nil {
 		return nil, err
 	}
@@ -179,25 +190,4 @@ func getShovelList(address, tickId string) ([]*mrc20_service.MintPin, error) {
 		}
 	}
 	return shovelList, nil
-}
-
-func GetNetParams(net string) *chaincfg.Params {
-	var (
-		netParams *chaincfg.Params = &chaincfg.MainNetParams
-	)
-	switch strings.ToLower(net) {
-	case "mainnet", "livenet":
-		netParams = &chaincfg.MainNetParams
-		break
-	case "signet":
-		netParams = &chaincfg.SigNetParams
-		break
-	case "testnet":
-		netParams = &chaincfg.TestNet3Params
-		break
-	case "regtest":
-		netParams = &chaincfg.RegressionNetParams
-		break
-	}
-	return netParams
 }

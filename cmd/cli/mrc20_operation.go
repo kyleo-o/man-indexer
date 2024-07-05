@@ -1,15 +1,19 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/spf13/cobra"
+	"manindexer/common"
 	"manindexer/inscribe/mrc20_service"
+	"os"
 	"strconv"
+	"strings"
 )
 
 var mrc20OperationCmd = &cobra.Command{
 	Use:   "mrc20op",
-	Short: "",
+	Short: "mrc20op is a tool to interact with mrc20 in bitcoin chain",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := checkWallet(); err != nil {
@@ -25,9 +29,116 @@ var mrc20OperationCmd = &cobra.Command{
 		}
 		switch args[0] {
 		case "deploy":
-			//tick := ""
+			tick := ""
+			tokenName := ""
+			decimals := ""
+			amtPerMint := ""
+			mintCount := ""
+			premineCount := ""
+			blockHeight := ""
+			qualCreator := ""
+			qualPath := ""
+			qualCount := ""
+			qualLvl := ""
+			feeRate := int64(0)
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter tick (): ")
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			tick = strings.TrimSpace(input)
 
-			//mrc20opDeploy("", "", "", "", "", "", "", "", "", "", 0)
+			fmt.Print("Enter tokenName: ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			tokenName = strings.TrimSpace(input)
+
+			fmt.Print("Enter decimals (0-12, default 0): ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			decimals = strings.TrimSpace(input)
+
+			fmt.Print("Enter amtPerMint ([1, 1e12]): ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			amtPerMint = strings.TrimSpace(input)
+			if amtPerMint == "" {
+				fmt.Println("amtPerMint is required")
+				return
+			}
+
+			fmt.Print("Enter mintCount ([1, 1e12]): ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			mintCount = strings.TrimSpace(input)
+			if mintCount == "" {
+				fmt.Println("mintCount is required")
+				return
+			}
+
+			fmt.Print("Enter premineCount (optional, default to 0, [0, mintCount]): ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			premineCount = strings.TrimSpace(input)
+
+			fmt.Print("Enter Qual-Creator : ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			qualCreator = strings.TrimSpace(input)
+
+			fmt.Print("Enter Qual-Path : ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			qualPath = strings.TrimSpace(input)
+
+			fmt.Print("Enter Qual-Count : ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			qualCount = strings.TrimSpace(input)
+
+			fmt.Print("Enter Qual-Lvl : ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			qualLvl = strings.TrimSpace(input)
+
+			fmt.Print("Enter FeeRate : ")
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				return
+			}
+			feeRate, _ = strconv.ParseInt(strings.TrimSpace(input), 10, 64)
+
+			mrc20opDeploy(tick, tokenName, decimals, amtPerMint, mintCount, premineCount, blockHeight, qualCreator, qualPath, qualCount, qualLvl, feeRate)
 			break
 		case "mint":
 			if len(args) < 3 {
@@ -67,8 +178,8 @@ func mrc20opDeploy(tick, tokenName, decimals, amtPerMint, mintCount, premineCoun
 		fetchCommitUtxoFunc    mrc20_service.FetchCommitUtxoFunc
 	)
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:                     wallet.GetNet(),
-		MetaIdFlag:              wallet.GetProtocolId(),
+		Net:                     getNetParams(),
+		MetaIdFlag:              common.Config.ProtocolID,
 		Op:                      "deploy",
 		OpPayload:               payload,
 		DeployPinOutAddress:     "",
@@ -123,8 +234,8 @@ func mrc20opMint(tickId string, feeRate int64) {
 	}
 
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:           wallet.GetNet(),
-		MetaIdFlag:    wallet.GetProtocolId(),
+		Net:           getNetParams(),
+		MetaIdFlag:    common.Config.ProtocolID,
 		Op:            "mint",
 		OpPayload:     payload,
 		CommitUtxos:   commitUtxos,
@@ -156,7 +267,7 @@ func mrc20opTransfer(tickId, to, amount string, feeRate int64) {
 		commitTxId, revealTxId string = "", ""
 		fee                    int64  = 0
 		err                    error
-		toPkScript, _                 = mrc20_service.AddressToPkScript(wallet.GetNet(), to)
+		toPkScript, _                 = mrc20_service.AddressToPkScript(getNetParams(), to)
 		changeAddress          string = wallet.GetAddress()
 		opRep                  *mrc20_service.Mrc20OpRequest
 		commitUtxos            []*mrc20_service.CommitUtxo    = make([]*mrc20_service.CommitUtxo, 0)
@@ -197,8 +308,8 @@ func mrc20opTransfer(tickId, to, amount string, feeRate int64) {
 		return
 	}
 	opRep = &mrc20_service.Mrc20OpRequest{
-		Net:            wallet.GetNet(),
-		MetaIdFlag:     wallet.GetProtocolId(),
+		Net:            getNetParams(),
+		MetaIdFlag:     common.Config.ProtocolID,
 		Op:             "transfer",
 		OpPayload:      payload,
 		CommitUtxos:    commitUtxos,

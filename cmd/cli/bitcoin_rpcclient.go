@@ -36,19 +36,23 @@ func GetBtcUtxo() ([]btcjson.ListUnspentResult, error) {
 	return client.ListUnspent()
 }
 
-func CreateWallet(name string) error {
+func CreateWallet(name string) (*btcjson.CreateWalletResult, error) {
+	return client.CreateWallet(name, rpcclient.WithCreateWalletPassphrase(""))
+}
+
+func CreateAccount(name string) error {
 	return client.CreateNewAccount(name)
 }
 
 func GetNewAddress(accountName string) (string, error) {
-	newAddress, err := client.GetNewAddress(accountName)
+	newAddress, err := client.GetNewAddressType(accountName, "segwit")
 	if err != nil {
 		return "", errors.New(fmt.Sprintf("Error creating new address: %v", err))
 	}
 	return newAddress.EncodeAddress(), nil
 }
 func DumpPrivKeyHex(newAddress string) (string, error) {
-	addr, err := btcutil.DecodeAddress(newAddress, GetNetParams("livenet"))
+	addr, err := btcutil.DecodeAddress(newAddress, getNetParams())
 	if err != nil {
 		return "", err
 	}

@@ -7,9 +7,9 @@ import (
 )
 
 var getMrc20BalanceCmd = &cobra.Command{
-	Use:   "balance",
-	Short: "Display balance for a given address",
-	Long:  `Display balance for a given address`,
+	Use:   "mrc20balance",
+	Short: "Display mrc20 balance for a given address",
+	Long:  `Display mrc20 balance for a given address`,
 	Run: func(cmd *cobra.Command, args []string) {
 		getMrc20Balance()
 	},

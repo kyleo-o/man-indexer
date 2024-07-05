@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
 	"manindexer/common"
@@ -15,24 +16,26 @@ var rootCmd = &cobra.Command{
 	Short: "MAN-CLI is a tool to interact with metaid-v2",
 	Long:  "This is a MAN-CLI, which is a tool to interact with metaid-v2 in bitcoin chain",
 	Run: func(cmd *cobra.Command, args []string) {
+		Error(cmd, args, errors.New("unrecognized command"))
 	},
 }
 
 func initConfig() {
 	man.InitAdapter(common.Chain, common.Db, common.TestNet, common.Server)
-	//if err := viper.ReadInConfig(); err != nil {
-	//	fmt.Println(err)
-	//	os.Exit(1)
-	//}
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.AddCommand(initWalletCmd)
+	rootCmd.AddCommand(getVersionCmd)
 	rootCmd.AddCommand(getBalanceCmd)
 	rootCmd.AddCommand(getMrc20BalanceCmd)
 	rootCmd.AddCommand(mrc20OperationCmd)
-	rootCmd.PersistentFlags().StringVar(&CfgFile, "config", "config.json", "config file")
+}
+
+func Error(cmd *cobra.Command, args []string, err error) {
+	fmt.Fprintf(os.Stderr, "execute %s args:%v error:%v\n", cmd.Name(), args, err)
+	os.Exit(1)
 }
 
 func Execute() {

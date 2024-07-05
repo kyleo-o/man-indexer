@@ -3,10 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/spf13/cobra"
 	"io/ioutil"
-	"manindexer/common"
 	"manindexer/man"
 	"os"
 )
@@ -17,7 +15,7 @@ var (
 
 var initWalletCmd = &cobra.Command{
 	Use:   "init-wallet",
-	Short: "Init Wallet",
+	Short: "Init Wallet for CLI",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		initCliWallet()
@@ -28,12 +26,13 @@ func initCliWallet() {
 	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
 		fmt.Println("Config file not found, creating a new one...")
 
-		name := "default_wallet"
-		err := CreateWallet(name)
-		if err != nil {
-			fmt.Printf("Failed to create wallet: %v\n", err)
-			return
-		}
+		name := "mywallet5"
+		//_, err := CreateWallet(name)
+		////err := CreateAccount(name)
+		//if err != nil {
+		//	fmt.Printf("Failed to create wallet: %v\n", err)
+		//	return
+		//}
 		address, err := GetNewAddress(name)
 		if err != nil {
 			fmt.Printf("Failed to get new address: %v\n", err)
@@ -49,8 +48,6 @@ func initCliWallet() {
 			account:    name,
 			privateKey: privateKey,
 			address:    address,
-			net:        &chaincfg.TestNet3Params,
-			protocolId: common.Config.ProtocolID,
 		}
 
 		file, err := os.Create(configFileName)
